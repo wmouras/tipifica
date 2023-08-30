@@ -5,13 +5,20 @@ import com.br.sos.repository.TipoDocumentoRepository;
 import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.index.IndexWriter;
 import org.apache.pdfbox.cos.COSDocument;
 import org.apache.pdfbox.io.RandomAccessFile;
 import org.apache.pdfbox.pdfparser.PDFParser;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -20,9 +27,13 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+@Service
 public class ClassificadorService{
 
     private static final String FILE_DIR = "D:\\sos\\documentos\\";
+
+    @Autowired
+    private static IndexWriter writer;
     Logger logger = Logger.getLogger(ClassificadorService.class);
 
     public ClassificadorService() {
@@ -73,6 +84,8 @@ public class ClassificadorService{
                             for (int i = 0; i < 10; i++) {
                                 for (String chave : palavrasChave) {
                                     if (linhaTexto[i].contains(chave)) {
+
+
                                         int index = linhaTexto[i].indexOf(chave);
 
                                         if(index == 0)
@@ -106,6 +119,29 @@ public class ClassificadorService{
         return listaFinal.stream().sorted().collect(Collectors.toList());
 
     }
+
+    private Document getDocumento(String nomeArquivo) throws FileNotFoundException {
+        Document document = new Document();
+        Field contentField = new Field(LuceneConstants.CONTENTS, new FileReader(new StringBuilder().append(FILE_DIR).append(nomeArquivo).toString()));
+        Field fileNameField = new Field(LuceneConstants.FILE_NAME, nomeArquivo, Field.Store.YES, Field.Index.NOT_ANALYZED);
+        Field filePathField = new Field(LuceneConstants.FILE_PATH, new StringBuilder().append(FILE_DIR).append(nomeArquivo).toString(), Field.Store.YES, Field.Index.NOT_ANALYZED);
+
+        document.add(contentField);
+        document.add(fileNameField);
+        document.add(filePathField);
+        return document;
+    }
+
+    private IndexWriter listarArquivoIndexacao() throws IOException {
+        List<String> listaArquivo = listarArquivos();
+        for (String arquivo: listaArquivo) {
+            Document documento = getDocumento(arquivo);
+            writer.addDocument(documento);
+        }
+        return writer;
+    }
+
+
 
     public int getDistancia(String texto, String PalavraChave){
         LevenshteinDistance distance = new LevenshteinDistance();
