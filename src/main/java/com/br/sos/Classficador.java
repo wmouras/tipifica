@@ -11,6 +11,8 @@ public class Classficador {
         final ClassificadorService service = new ClassificadorService();
         List<String> listaResultado = service.classificarDocumentos();
 
+        System.out.println("\r\nLista de arquivos classificados: " + listaResultado.size() + "\r\n");
+
         for (String resultado: listaResultado){
             System.out.println(resultado);
         }

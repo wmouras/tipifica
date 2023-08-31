@@ -5,35 +5,27 @@ import com.br.sos.repository.TipoDocumentoRepository;
 import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
-import org.apache.lucene.index.IndexWriter;
 import org.apache.pdfbox.cos.COSDocument;
 import org.apache.pdfbox.io.RandomAccessFile;
 import org.apache.pdfbox.pdfparser.PDFParser;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
 
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-@Service
 public class ClassificadorService{
 
     private static final String FILE_DIR = "D:\\sos\\documentos\\";
-
-    @Autowired
-    private static IndexWriter writer;
     Logger logger = Logger.getLogger(ClassificadorService.class);
 
     public ClassificadorService() {
@@ -42,9 +34,9 @@ public class ClassificadorService{
 
     public static List<String> listarArquivos() {
 
-        List<File> files = Objects.requireNonNull(Arrays.stream(new File(FILE_DIR).listFiles()).toList());
+        List<File> files = Objects.requireNonNull(Arrays.stream(Objects.requireNonNull(new File(FILE_DIR).listFiles())).toList());
         List<String> arquivos = new ArrayList<>();
-        files.stream().filter(file -> file.isFile()).forEach(file -> arquivos.add(file.getName()));
+        files.stream().filter(File::isFile).forEach(file -> arquivos.add(file.getName()));
         return arquivos;
 
     }
@@ -65,83 +57,71 @@ public class ClassificadorService{
         List<String> listaArquivo = listarArquivos();
         List<TipologiaDocumento> listaDistancia = getListaTipoDocumento();
         List<String> listaFinal = new ArrayList<>();
+        TipoDocumentoService service = new TipoDocumentoService();
 
         for(String doc: listaArquivo){
 
-                int valido;
-                String texto = buscarDocumento(doc);
-                for (TipologiaDocumento tipo: listaDistancia ) {
+            int valido;
+            String texto = buscarDocumento(doc);
 
-                    String encontrado = null;
-                    try {
+            if(doc.toLowerCase().contains("_mapa.pdf")){
+                listaFinal.add(doc + " # " + "Mapa");
+            } else {
 
-                        String[] linhaTexto = texto.split("\r\n");
-                        String[] palavrasChave = tipo.getDsPalavraChave().split(",");
+                for (TipologiaDocumento tipo : listaDistancia) {
 
-                        if(!texto.isBlank() && !texto.isEmpty() && texto.contains(palavrasChave[0])) {
+                    String[] linhaTexto = texto.split("\r\n");
+                    String[] palavrasChave = tipo.getDsPalavraChave().split(",");
 
-                            valido = 0;
-                            for (int i = 0; i < 10; i++) {
-                                for (String chave : palavrasChave) {
-                                    if (linhaTexto[i].contains(chave)) {
+                    if(tipo.getNuTipo().equals(64) && texto.toLowerCase().contains("requerimento") && linhaTexto.length > 10){
 
+                        TipologiaDocumento tipoDoc = service.identificarRequerimento(linhaTexto, tipo);
+                        if(Objects.nonNull(tipoDoc)){
+                            listaFinal.add(doc + " # " + tipoDoc.getNoTipo());
+                            System.out.println(texto);
+                            texto = "";
+                        }
 
-                                        int index = linhaTexto[i].indexOf(chave);
+                    }
 
-                                        if(index == 0)
-                                            valido += 1;
-                                        break;
-                                    }
+                    valido = 0;
+                    if (!texto.isEmpty() && texto.contains(palavrasChave[0])) {
+
+                        for (int i = 0; i < 7; i++) {
+
+                            if(linhaTexto[i].contains("processo") && tipo.getNuTipo().equals(690)){
+                                TipologiaDocumento tipoDoc = service.identificarCapa(tipo.getNoTipo());
+                                if(tipoDoc != null){
+                                    listaFinal.add(doc + " # " + tipoDoc.getNoTipo());
+                                    System.out.println(texto);
+                                    break;
                                 }
                             }
 
-                            if(valido == palavrasChave.length){
-                                encontrado = doc + " # " + tipo.getNoTipo();
-                                listaFinal.add(encontrado);
-                                break;
-                            }
+                            for (String chave : palavrasChave) {
 
+                                if (linhaTexto[i].contains(chave)) {
+                                    int index = linhaTexto[i].indexOf(chave);
+                                    if (index == 0)
+                                        valido += 1;
+                                }
+                            }
                         }
 
-                    } catch (Exception e) {
-                        System.out.println("Comparando: " + doc + " # " + "##########" + Arrays.stream(e.getStackTrace()).toList());
-                        logger.info(e.getMessage());
                     }
 
-                    if(Objects.nonNull(encontrado)){
-                        listaArquivo.remove(doc);
+                    if (valido == palavrasChave.length) {
+                        listaFinal.add(doc + " # " + tipo.getNoTipo());
                     }
 
                 }
 
+            }
         }
 
         return listaFinal.stream().sorted().collect(Collectors.toList());
 
     }
-
-    private Document getDocumento(String nomeArquivo) throws FileNotFoundException {
-        Document document = new Document();
-        Field contentField = new Field(LuceneConstants.CONTENTS, new FileReader(new StringBuilder().append(FILE_DIR).append(nomeArquivo).toString()));
-        Field fileNameField = new Field(LuceneConstants.FILE_NAME, nomeArquivo, Field.Store.YES, Field.Index.NOT_ANALYZED);
-        Field filePathField = new Field(LuceneConstants.FILE_PATH, new StringBuilder().append(FILE_DIR).append(nomeArquivo).toString(), Field.Store.YES, Field.Index.NOT_ANALYZED);
-
-        document.add(contentField);
-        document.add(fileNameField);
-        document.add(filePathField);
-        return document;
-    }
-
-    private IndexWriter listarArquivoIndexacao() throws IOException {
-        List<String> listaArquivo = listarArquivos();
-        for (String arquivo: listaArquivo) {
-            Document documento = getDocumento(arquivo);
-            writer.addDocument(documento);
-        }
-        return writer;
-    }
-
-
 
     public int getDistancia(String texto, String PalavraChave){
         LevenshteinDistance distance = new LevenshteinDistance();
