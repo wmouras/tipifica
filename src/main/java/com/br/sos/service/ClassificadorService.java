@@ -14,10 +14,7 @@ import org.apache.pdfbox.text.PDFTextStripper;
 import java.io.File;
 import java.io.IOException;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -31,6 +28,7 @@ public class ClassificadorService{
     public ClassificadorService() {
         logger.setLevel(Level.ERROR);
     }
+    TipoDocumentoService service = new TipoDocumentoService();
 
     public static List<String> listarArquivos() {
 
@@ -57,11 +55,9 @@ public class ClassificadorService{
         List<String> listaArquivo = listarArquivos();
         List<TipologiaDocumento> listaDistancia = getListaTipoDocumento();
         List<String> listaFinal = new ArrayList<>();
-        TipoDocumentoService service = new TipoDocumentoService();
 
         for(String doc: listaArquivo){
 
-            int valido;
             String texto = buscarDocumento(doc);
 
             if(doc.toLowerCase().contains("_mapa.pdf")){
@@ -73,45 +69,45 @@ public class ClassificadorService{
                     String[] linhaTexto = texto.split("\r\n");
                     String[] palavrasChave = tipo.getDsPalavraChave().split(",");
 
+                    if("AA00146G20082838SOS_17_18_20052023_33512140149_NORMAL.pdf".equals(doc)){
+
+                        boolean matches = texto.contains("anotações de responsabilidade tec");
+                        if(matches){
+                            listaFinal.add(doc + " # " + "Anotação de Responsabilidade Técnica");
+                            texto = "";
+                        }
+                    }
+
+                    if(tipo.getNuTipo().equals(7) && texto.toLowerCase().contains("analise") && linhaTexto.length > 5){
+                        TipologiaDocumento tipoDoc = service.identificarAnalise(linhaTexto, tipo);
+
+                        if(Objects.nonNull(tipoDoc)){
+                            listaFinal.add(doc + " # " + tipoDoc.getNoTipo());
+                            texto = "";
+                        }
+                    }
+
                     if(tipo.getNuTipo().equals(64) && texto.toLowerCase().contains("requerimento") && linhaTexto.length > 10){
 
                         TipologiaDocumento tipoDoc = service.identificarRequerimento(linhaTexto, tipo);
                         if(Objects.nonNull(tipoDoc)){
                             listaFinal.add(doc + " # " + tipoDoc.getNoTipo());
-                            System.out.println(texto);
                             texto = "";
                         }
-
                     }
 
-                    valido = 0;
+                    int valido = 0;
                     if (!texto.isEmpty() && texto.contains(palavrasChave[0])) {
 
-                        for (int i = 0; i < 7; i++) {
-
-                            if(linhaTexto[i].contains("processo") && tipo.getNuTipo().equals(690)){
-                                TipologiaDocumento tipoDoc = service.identificarCapa(tipo.getNoTipo());
-                                if(tipoDoc != null){
-                                    listaFinal.add(doc + " # " + tipoDoc.getNoTipo());
-                                    System.out.println(texto);
-                                    break;
-                                }
-                            }
-
-                            for (String chave : palavrasChave) {
-
-                                if (linhaTexto[i].contains(chave)) {
-                                    int index = linhaTexto[i].indexOf(chave);
-                                    if (index == 0)
-                                        valido += 1;
-                                }
-                            }
+                        if(classificarProcesso(linhaTexto, tipo)){
+                            listaFinal.add(doc + " # " + tipo.getNoTipo());
+                            texto = "";
                         }
-
-                    }
-
-                    if (valido == palavrasChave.length) {
-                        listaFinal.add(doc + " # " + tipo.getNoTipo());
+                        valido = classificacaoSimples(linhaTexto, palavrasChave);
+                        if(valido > 0){
+                            listaFinal.add(doc + " # " + tipo.getNoTipo());
+                            texto = "";
+                        }
                     }
 
                 }
@@ -121,6 +117,41 @@ public class ClassificadorService{
 
         return listaFinal.stream().sorted().collect(Collectors.toList());
 
+    }
+
+    public int classificacaoSimples(String[] linhaTexto, String[] palavrasChave){
+
+        for (int i = 0; i < 7; i++) {
+            int valido = 0;
+            for (String chave : palavrasChave) {
+
+                if (linhaTexto[i].contains(chave)) {
+                    int index = linhaTexto[i].indexOf(chave);
+                    if (index == 0)
+                        valido += 1;
+                }
+            }
+            if (valido == palavrasChave.length){
+                return valido;
+            }
+
+        }
+        return -1;
+    }
+
+    public boolean classificarProcesso(String[] linhaTexto, TipologiaDocumento tipo){
+
+        for (int i = 0; i < 7; i++) {
+
+            if (linhaTexto[i].contains("processo") && tipo.getNuTipo().equals(690)) {
+                TipologiaDocumento tipoDoc = service.identificarCapa(linhaTexto[i], tipo);
+                if (Objects.nonNull(tipoDoc)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     public int getDistancia(String texto, String PalavraChave){
