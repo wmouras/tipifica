@@ -71,7 +71,8 @@ public class ClassificadorService{
 
                     if("AA00146G20082838SOS_17_18_20052023_33512140149_NORMAL.pdf".equals(doc)){
 
-                        boolean matches = texto.contains("anotações de responsabilidade tec");
+                        String txt = texto.replaceAll(" ", "");
+                        boolean matches = Pattern.compile("(anotaçõesderesponsabilidadetec)").matcher(txt).find();
                         if(matches){
                             listaFinal.add(doc + " # " + "Anotação de Responsabilidade Técnica");
                             texto = "";
@@ -156,7 +157,6 @@ public class ClassificadorService{
 
     public int getDistancia(String texto, String PalavraChave){
         LevenshteinDistance distance = new LevenshteinDistance();
-        distance.getThreshold();
         return distance.apply(texto.toLowerCase(), PalavraChave.toLowerCase());
     }
 

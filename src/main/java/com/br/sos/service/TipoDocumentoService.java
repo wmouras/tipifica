@@ -21,8 +21,8 @@ public class TipoDocumentoService {
         }
 
         for (int i = 0; i < 10; i++) {
-            String[] match = linhaTexto[i].split(" ");
-            if(match.length > 0 && match[0].equals("requerimento")){
+            boolean matches = linhaTexto[i].matches("^(requerimento) *");
+            if(matches){
                 return tipo;
             }
         }
@@ -36,7 +36,7 @@ public class TipoDocumentoService {
         boolean contem = false;
         for (int i = 0; i < 5; i++) {
             if(!matches)
-                matches = linhaTexto[i].matches("^(analise|análise) (.*)");
+                matches = linhaTexto[i].matches("^(analise|análise) *");
 
             if(!contem)
                 contem = linhaTexto[i].contains("análise");
